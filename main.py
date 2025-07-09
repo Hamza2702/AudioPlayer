@@ -13,6 +13,7 @@ import wave
 import pyaudio
 import os
 import glob
+import tempfile
 
 
 class AudioPlayer:
@@ -33,6 +34,10 @@ class AudioPlayer:
         self.frames = []
         self.stop_recording_flag = threading.Event()
         self.latest_recording = None
+        self.live_audio_buffer = []
+        self.buffer_lock = threading.Lock()
+        self.recognition_thread = None
+        self.recognition_interval = 5  # Try to identify every 5 seconds
 
         # clear search flag
         self.clear_search_flag = False
@@ -50,7 +55,7 @@ class AudioPlayer:
         self.search_entry = tk.Entry(
             search_frame,
             textvariable=self.search_var,
-            font=('Poppins', 12),
+            font=('Poppins', 10),
             bg='#2a2a2a',
             fg='white',
             insertbackground='white',
@@ -64,9 +69,9 @@ class AudioPlayer:
         # Search button
         self.search_button = tk.Button(
             search_frame,
-            text="Search",
+            text="Search Artist",
             command=self.search_artist,
-            font=('Poppins', 14, 'bold'),
+            font=('Poppins', 10, 'bold'),
             bg='#0d7377',
             fg='white',
             activebackground='#14a085',
@@ -79,12 +84,12 @@ class AudioPlayer:
 
         # Recording section
         recording_frame = tk.Frame(main_frame, bg='#1a1a1a')
-        recording_frame.pack(fill=tk.X, pady=(0, 20))
+        recording_frame.pack(fill=tk.X, pady=(0, 5))
 
         # Recording button
         self.record_button = tk.Button(
             recording_frame,
-            text="🎤 Start Recording",
+            text="🎤 Check for song",
             command=self.toggle_recording,
             font=('Poppins', 12, 'bold'),
             bg='#d73527',
@@ -93,8 +98,6 @@ class AudioPlayer:
             activeforeground='white',
             relief=tk.FLAT,
             bd=0,
-            padx=20,
-            pady=10
         )
         self.record_button.pack()
 
@@ -111,23 +114,6 @@ class AudioPlayer:
         # Song recognition section
         recognition_frame = tk.Frame(main_frame, bg='#1a1a1a')
         recognition_frame.pack(fill=tk.X, pady=(0, 0))
-
-        # Song recognition button
-        self.recognize_button = tk.Button(
-            recognition_frame,
-            text="🎵 Identify Latest Recording",
-            command=self.identify_song,
-            font=('Poppins', 12, 'bold'),
-            bg='#7b2cbf',
-            fg='white',
-            activebackground='#9d4edd',
-            activeforeground='white',
-            relief=tk.FLAT,
-            bd=0,
-            padx=10,
-            pady=0
-        )
-        self.recognize_button.pack()
 
         # Recognition status label
         self.recognition_status = tk.Label(
@@ -148,14 +134,14 @@ class AudioPlayer:
             self.display_frame,
             bg='#1a1a1a',
             width=350,
-            height=290
+            height=350
         )
-        self.image_label.pack(pady=(0, 15))
+        self.image_label.pack(pady=(0, 0))
 
         # Title label
         self.title_label = tk.Label(
             self.display_frame,
-            text="Record audio to identify songs",
+            text="🎤 Check for song",
             font=('Poppins', 16, 'bold'),
             bg='#1a1a1a',
             fg='white',
@@ -170,27 +156,12 @@ class AudioPlayer:
             font=('Poppins', 12),
             bg='#1a1a1a',
             fg='#cccccc',
-            wraplength=350
+            wraplength=150
         )
-        self.subtitle_label.pack(pady=(5, 0))
+        self.subtitle_label.pack(pady=(0, 0))
 
         # Default search box test
         self.search_var.set("Search for an artist...")
-
-        # Check for existing recording files
-        self.check_for_existing_recordings()
-
-    def check_for_existing_recordings(self):
-        # Check for existing recording files
-        recordings = glob.glob("Recorded_Audio*.wav")
-        if recordings:
-            # Sort by time to get latest
-            recordings.sort(key=os.path.getmtime, reverse=True)
-            self.latest_recording = recordings[0]
-            self.recognition_status.config(
-                text=f"Latest recording: {os.path.basename(self.latest_recording)}",
-                fg='#14a085'
-            )
 
     ## Clear search
     def clear_search(self, event):
@@ -239,12 +210,13 @@ class AudioPlayer:
 
             # Reset variables
             self.frames = []
+            self.live_audio_buffer = []
             self.stop_recording_flag.clear()
             self.is_recording = True
 
             # Update UI
             self.record_button.config(
-                text="⏹️ Stop Recording",
+                text="⏹️ Stop checking",
                 bg='#666666',
                 activebackground='#888888'
             )
@@ -258,17 +230,30 @@ class AudioPlayer:
             self.recording_thread.daemon = True
             self.recording_thread.start()
 
+            # Start recognition loop
+            self.recognition_thread = threading.Thread(target=self.recognition_loop)
+            self.recognition_thread.daemon = True
+            self.recognition_thread.start()
+
         except Exception as e:
             messagebox.showerror("Recording Error", f"Failed to start recording: {str(e)}")
             self.cleanup_recording()
 
     def record_audio_thread(self):
         chunk = 1024
+        buffer_duration = 10  # 10 seconds of audio in buffer
+        max_frames = int(44100 * buffer_duration / chunk)
+
         try:
             while not self.stop_recording_flag.is_set() and self.is_recording:
                 try:
                     data = self.audio_stream.read(chunk, exception_on_overflow=False)
-                    self.frames.append(data)
+                    with self.buffer_lock:
+                        self.live_audio_buffer.append(data)
+                        # Keep only last 10 seconds
+                        if len(self.live_audio_buffer) > max_frames:
+                            self.live_audio_buffer.pop(0)
+
                 except Exception as e:
                     print(f"Stream read error: {e}")
                     break
@@ -292,62 +277,20 @@ class AudioPlayer:
                 self.audio_stream.close()
 
             if self.audio_p:
-                sample_width = self.audio_p.get_sample_size(pyaudio.paInt16)
                 self.audio_p.terminate()
 
-            # Save recording
-            if self.frames:
-                self.save_recording(sample_width)
-            else:
-                self.recording_status.config(text="No audio recorded", fg='#888888')
+            # Update status
+            self.recording_status.config(text="Checking stopped", fg='#888888')
 
         except Exception as e:
             messagebox.showerror("Error", f"Failed to finalize recording: {str(e)}")
         finally:
             self.cleanup_recording()
 
-    def save_recording(self, sample_width):
-        try:
-            # Create audio file with name
-            file_name = "Recorded_Audio"
-            ending = ".wav"
-            wav_file = file_name + ending
-            count = 1
-
-            # Add number to file (if file name alr exists)
-            while os.path.exists(wav_file):
-                wav_file = f"{file_name}_{count}{ending}"
-                count += 1
-
-            # Write the wav file
-            with wave.open(wav_file, 'wb') as wf:
-                wf.setnchannels(1)  # mono
-                wf.setsampwidth(sample_width)
-                wf.setframerate(44100)
-                wf.writeframes(b''.join(self.frames))
-
-            # Update latest recording
-            self.latest_recording = wav_file
-
-            # Dispaly to user
-            self.recording_status.config(
-                text=f"Audio saved: {os.path.basename(wav_file)}",
-                fg='#14a085'
-            )
-            self.recognition_status.config(
-                text=f"Latest recording: {os.path.basename(wav_file)}",
-                fg='#14a085'
-            )
-            print(f"Audio saved to: {os.path.abspath(wav_file)}")
-
-        except Exception as e:
-            messagebox.showerror("Save Error", f"Failed to save recording: {str(e)}")
-            self.recording_status.config(text="Failed to save recording", fg='#ff4444')
-
     def cleanup_recording(self):
         # Reset UI
         self.record_button.config(
-            text="🎤 Start Recording",
+            text="🎤 Check for song",
             bg='#d73527',
             activebackground='#ff4444'
         )
@@ -357,39 +300,86 @@ class AudioPlayer:
         self.audio_stream = None
         self.audio_p = None
         self.frames = []
+        self.recognition_thread = None
 
-    def identify_song(self):
-        if not self.latest_recording or not os.path.exists(self.latest_recording):
-            messagebox.showwarning("Warning", "No recording found. Please record audio first.")
-            return
+    def recognition_loop(self):
+        while self.is_recording and not self.stop_recording_flag.is_set():
+            try:
+                # Wait for recognition interval
+                if self.stop_recording_flag.wait(self.recognition_interval):
+                    break
 
-        # Display identifying song to user
-        self.recognition_status.config(text="Identifying song...", fg='#ffaa00')
-        self.recognize_button.config(state='disabled')
+                # Skip if not recording anymore
+                if not self.is_recording:
+                    break
 
-        # Run recognition in background thread
-        thread = threading.Thread(target=self.identify_song_thread)
-        thread.daemon = True
-        thread.start()
+                # Check if enough audio data
+                with self.buffer_lock:
+                    if len(self.live_audio_buffer) < 100:  # Need at least some audio data
+                        continue
 
-    def identify_song_thread(self):
+                # Update status
+                self.root.after(0, lambda: self.recognition_status.config(text="Identifying song...",
+                                                                          fg='#ffaa00'))
+
+                # Create temporary file from live buffer
+                temp_file = self.create_temp_file_from_buffer()
+
+                if not temp_file:
+                    continue
+
+                # Run the async recognition
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+
+                song_data = loop.run_until_complete(self.recognize_song_from_file(temp_file))
+
+                # Clean up temp file
+                try:
+                    os.unlink(temp_file)
+                except:
+                    pass
+
+                if song_data:
+                    # Update GUI in main
+                    self.root.after(0, self.update_song_display, song_data)
+                else:
+                    # Only show error if recording
+                    if self.is_recording:
+                        self.root.after(0, lambda: self.recognition_status.config(text="Listening for music...",
+                                                                                  fg='#888888'))
+
+            except Exception as e:
+                print(f"Recognition loop error: {e}")
+                if self.is_recording:
+                    self.root.after(0, lambda: self.recognition_status.config(text="Recognition error, retrying...",
+                                                                              fg='#ff4444'))
+
+    def create_temp_file_from_buffer(self):
         try:
-            # Run the async recognition
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
+            with self.buffer_lock:
+                if not self.live_audio_buffer:
+                    return None
 
-            song_data = loop.run_until_complete(self.recognize_song_from_file(self.latest_recording))
+                # Copy current buffer
+                buffer_copy = self.live_audio_buffer.copy()
 
-            if song_data:
-                # Update GUI in main
-                self.root.after(0, self.update_song_display, song_data)
-            else:
-                self.root.after(0, self.show_recognition_error, "Song not recognized")
+            # Create temporary file
+            temp_fd, temp_path = tempfile.mkstemp(suffix='.wav')
+            os.close(temp_fd)
+
+            # Write audio data to temp file
+            with wave.open(temp_path, 'wb') as wf:
+                wf.setnchannels(1)  # mono
+                wf.setsampwidth(2)  # 16-bit
+                wf.setframerate(44100)
+                wf.writeframes(b''.join(buffer_copy))
+
+            return temp_path
 
         except Exception as e:
-            self.root.after(0, self.show_recognition_error, f"Error: {str(e)}")
-        finally:
-            self.root.after(0, lambda: self.recognize_button.config(state='normal'))
+            print(f"Error creating temp file: {e}")
+            return None
 
     async def recognize_song_from_file(self, file_path):
         try:
@@ -458,7 +448,7 @@ class AudioPlayer:
                 if response.status_code == 200:
                     image = Image.open(BytesIO(response.content))
                     # Resize image to fit
-                    image = image.resize((150, 150), Image.Resampling.LANCZOS)
+                    image = image.resize((350, 350), Image.Resampling.LANCZOS)
                     photo = ImageTk.PhotoImage(image)
                     self.image_label.config(image=photo)
                     self.image_label.image = photo  # Reference
@@ -473,7 +463,7 @@ class AudioPlayer:
     def show_recognition_error(self, message):
         self.recognition_status.config(text=message, fg='#ff4444')
         self.title_label.config(text="Song not recognized")
-        self.subtitle_label.config(text="Try recording again with clearer audio")
+        self.subtitle_label.config(text="Try again or check audio quality")
 
     def search_artist(self):
         artist_name = self.search_var.get().strip()
@@ -550,7 +540,7 @@ class AudioPlayer:
                 if response.status_code == 200:
                     image = Image.open(BytesIO(response.content))
                     # Resize image
-                    image = image.resize((150, 150), Image.Resampling.LANCZOS)
+                    image = image.resize((350, 350), Image.Resampling.LANCZOS)
                     photo = ImageTk.PhotoImage(image)
                     self.image_label.config(image=photo)
                     self.image_label.image = photo  # Keep a reference
@@ -564,7 +554,7 @@ class AudioPlayer:
 
     def show_placeholder_image(self):
         # Placeholder image
-        placeholder = Image.new('RGB', (150, 150), color='#2a2a2a')
+        placeholder = Image.new('RGB', (350, 350), color='#2a2a2a')
         photo = ImageTk.PhotoImage(placeholder)
         self.image_label.config(image=photo)
         self.image_label.image = photo
@@ -579,6 +569,7 @@ def main():
     root = tk.Tk()
     app = AudioPlayer(root)
     root.mainloop()
+
 
 if __name__ == "__main__":
     main()
