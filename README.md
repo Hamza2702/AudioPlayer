@@ -3,8 +3,7 @@ Due to my most recent hobby, CD collecting, I've gone out of the way to try and 
 
 Currently, using AudioPlayer, you can -
 - Search for artists
-- Record with your default input device and create a wav file
-- Identify what song is playing in your latest recording
+- Check for a song with your default mic input and identify that song
 
 To do -
 - Polish design
