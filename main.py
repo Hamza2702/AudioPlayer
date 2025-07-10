@@ -133,8 +133,8 @@ class AudioPlayer:
         self.image_label = tk.Label(
             self.display_frame,
             bg='#1a1a1a',
-            width=350,
-            height=350
+            width=300,
+            height=300
         )
         self.image_label.pack(pady=(0, 0))
 
@@ -162,6 +162,28 @@ class AudioPlayer:
 
         # Default search box test
         self.search_var.set("Search for an artist...")
+
+        # Spotify button
+        self.spotify_button = tk.Button(
+            recording_frame,
+            text="🎤 Listen on spotify",
+            command=self.toggle_spotify,
+            font=('Poppins', 12, 'bold'),
+            bg='#1db954',
+            fg='#191414',
+            activebackground='#1ed760',
+            activeforeground='white',
+            relief=tk.FLAT,
+            bd=0,
+        )
+        self.spotify_button.pack()
+
+    # Listen on spotify
+    def toggle_spotify(self):
+        if not self.is_listening:
+            self.start_listening()
+        else:
+            self.stop_listening()
 
     ## Clear search
     def clear_search(self, event):
