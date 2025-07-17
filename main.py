@@ -1,7 +1,7 @@
 import asyncio
 import time
 import tkinter as tk
-from tkinter import messagebox
+from tkinter import messagebox, ttk
 from PIL import Image, ImageTk
 import requests
 from io import BytesIO
@@ -33,13 +33,13 @@ class AudioPlayer:
         self.is_recording = False
         self.recording_thread = None
         self.audio_stream = None
-        self.audio_p = None
+        self.audio_p = pyaudio.PyAudio()  # Initialize audio_p here
         self.frames = []
         self.stop_recording_flag = threading.Event()
         self.live_audio_buffer = []
         self.buffer_lock = threading.Lock()
         self.recognition_thread = None
-        self.recognition_interval = 5 # Try to identify every 5 seconds
+        self.recognition_interval = 5  # Try to identify every 5 seconds
 
         # clear search flag
         self.clear_search_flag = False
@@ -50,6 +50,9 @@ class AudioPlayer:
         self.spotify_auth_manager = None
         self.spotify_update_thread = None
         self.spotify_stop_flag = threading.Event()
+
+        # Get input devices
+        self.devices, self.device_info_list = self.get_input_devices()
 
         # Main
         main_frame = tk.Frame(root, bg='#1a1a1a', padx=20, pady=20)
@@ -210,6 +213,50 @@ class AudioPlayer:
         )
         self.spotify_status.pack(pady=(5, 0))
 
+        # Combo box
+        self.combobox_menu = ttk.Combobox(
+            recording_frame,
+            values=self.devices,
+            font=('Poppins', 8),
+            state="readonly",
+            background='#084b83',
+            foreground='black'
+
+        )
+        self.combobox_menu.current(0)
+        self.combobox_menu.pack(pady=(5, 0))
+
+    ##################################################################################################################################
+
+    def get_input_devices(self):
+        devices = []
+        device_info_list = []
+        default_input = None
+
+        # Go through devices
+        for i in range(self.audio_p.get_device_count()):
+            device_info = self.audio_p.get_device_info_by_index(i)
+            # Get input devices only
+            if device_info['maxInputChannels'] > 0:
+                device_name = device_info['name']
+                # Check for default input device
+                if device_info.get('isDefaultInput', False):
+                    default_input = device_name
+                    # Add to beginning of dropdown
+                    devices.insert(0, f"Default: {device_name}")
+                    device_info_list.insert(0, device_info)
+                else:
+                    devices.append(device_name)
+                    device_info_list.append(device_info)
+
+        # No default devices found, use first one
+        if not default_input and device_info_list:
+            default_input = device_info_list[0]
+            devices.insert(0, f"Default: {default_input['name']}")
+            device_info_list.insert(0, default_input)
+
+        return devices, device_info_list
+
     # Connect to spotify
     def connect_spotify(self):
         try:
@@ -320,33 +367,14 @@ class AudioPlayer:
             except spotipy.exceptions.SpotifyException as e:
                 # Token expired
                 if e.http_status == 401:
-                    print("Token expired, attempting to refresh...")
-                    if self.refresh_spotify_token():
-                        print("Token refreshed successfully")
-                        continue
-                    else:
-                        print("Token refresh failed, stopping monitoring...")
-                        self.root.after(0, lambda: self.spotify_status.config(
-                            text="Connection expired. Try reconnecting"))
-                        break
+                    self.root.after(0, lambda: self.spotify_status.config(
+                        text="Connection expired. Try reconnecting"))
                 else:
                     print(f"Spotify API error: {e}")
             except Exception as e:
                 print(f"Error in monitor_current_song: {e}")
 
             self.spotify_stop_flag.wait(2)
-
-    # Refresh spotify token - idk if it works yet
-    def refresh_spotify_token(self):
-        try:
-            token_info = self.spotify_auth_manager.refresh_access_token(
-                self.spotify_auth_manager.get_cached_token()['refresh_token']
-            )
-            self.spotify_client = spotipy.Spotify(auth=token_info)['access_token']
-            return True
-        except Exception as e:
-            print(f"Failed token refresh: {e}")
-            return False
 
     # Clear display / set to placeholder
     def clear_display(self):
@@ -481,12 +509,7 @@ class AudioPlayer:
         except spotipy.exceptions.SpotifyException as e:
             # Token expired
             if e.http_status == 401:
-                if self.refresh_spotify_token():
-                    # Retry
-                    self.sync_and_play_thread()
-                    return
-                else:
-                    self.root.after(0, lambda: messagebox.showerror("Auth Error","Spotify session expired. Please reconnect."))
+                self.root.after(0, lambda: messagebox.showerror("Auth Error","Spotify session expired. Please reconnect."))
             else:
                 self.root.after(0, lambda: messagebox.showerror("Spotify Error", f"Spotify API error: {str(e)}"))
         except Exception as e:
@@ -626,7 +649,6 @@ class AudioPlayer:
             bg='#d73527',
             activebackground='#ff4444'
         )
-
         self.sync_button.pack_forget()
 
         # Clear variables
