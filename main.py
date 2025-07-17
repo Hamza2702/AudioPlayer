@@ -214,19 +214,38 @@ class AudioPlayer:
         self.spotify_status.pack(pady=(5, 0))
 
         # Combo box
+        devices_max_length = max(len(device) for device in self.devices) if self.devices else 20
         self.combobox_menu = ttk.Combobox(
             recording_frame,
             values=self.devices,
             font=('Poppins', 8),
             state="readonly",
             background='#084b83',
-            foreground='black'
+            foreground='black',
+            width= devices_max_length + 5
 
         )
         self.combobox_menu.current(0)
         self.combobox_menu.pack(pady=(5, 0))
+        self.combobox_menu.bind("<<ComboboxSelected>>", self.update_device_label)
+
+        # Current device label
+        self.device_label = tk.Label(
+            recording_frame,
+            text="Current device:",
+            font=('Poppins', 8),
+            bg="#1a1a1a",
+            fg='white',
+            wraplength=550
+        )
+        self.device_label.pack(pady=(5, 0))
+
 
     ##################################################################################################################################
+
+    def update_device_label(self, event=None):
+        selected_device = self.combobox_menu.get()
+        self.device_label.configure(text=f"Current device: {selected_device}")
 
     def get_input_devices(self):
         devices = []
