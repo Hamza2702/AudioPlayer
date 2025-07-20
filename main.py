@@ -242,6 +242,8 @@ class AudioPlayer:
         )
         self.device_label.pack(pady=(5, 0))
 
+        self.update_device_label()
+
         # Logged songs listbox , too lazy to change name to listbox......!
         self.logged_songs_label = tk.Listbox(
             recording_frame,
