@@ -386,8 +386,8 @@ class AudioPlayer:
             except spotipy.exceptions.SpotifyException as e:
                 # Token expired
                 if e.http_status == 401:
-                    self.root.after(0, lambda: self.spotify_status.config(
-                        text="Connection expired. Try reconnecting"))
+                    messagebox.showwarning("Connection Expired", "Please reconnect to Spotify as the access token expired")
+
                 else:
                     print(f"Spotify API error: {e}")
             except Exception as e:
@@ -492,6 +492,8 @@ class AudioPlayer:
 
             search_query = f"track:{song_title} artist:{artist_name}"
             results = self.spotify_client.search(q=search_query, type='track', limit=1)
+
+            print(results)
 
             # Play on device
             if results['tracks']['items']:
