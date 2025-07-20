@@ -1,5 +1,4 @@
 import asyncio
-import time
 import tkinter as tk
 from tkinter import messagebox, ttk
 from PIL import Image, ImageTk
@@ -17,6 +16,7 @@ import spotipy
 from spotipy.oauth2 import SpotifyOAuth
 import webbrowser
 from dotenv import load_dotenv
+from collections import deque
 
 
 class AudioPlayer:
@@ -25,7 +25,7 @@ class AudioPlayer:
     def __init__(self, root):
         self.root = root
         self.root.title("AudioPlayer")
-        self.root.geometry("700x700")
+        self.root.geometry("700x900")
         self.root.configure(bg='#1a1a1a')
         self.root.resizable(False, False)
         self.root.eval('tk::PlaceWindow . center')
@@ -40,6 +40,8 @@ class AudioPlayer:
         self.buffer_lock = threading.Lock()
         self.recognition_thread = None
         self.recognition_interval = 5  # Try to identify every 5 seconds
+        self.logged_songs = deque(maxlen=5) # Song deque
+        self.song_counter = 0
 
         # clear search flag
         self.clear_search_flag = False
@@ -240,13 +242,43 @@ class AudioPlayer:
         )
         self.device_label.pack(pady=(5, 0))
 
+        # Logged songs listbox , too lazy to change name to listbox......!
+        self.logged_songs_label = tk.Listbox(
+            recording_frame,
+            height = 5,
+            width = 60,
+            font=('Poppins', 10),
+            bg='#1a1a1a',
+            fg='white'
+        )
+        self.logged_songs_label.pack(pady=(5, 0))
+
 
     ##################################################################################################################################
 
+    # Deque of latest tracked songs
+    def track_latest_songs(self, song_data=None):
+        if song_data:
+            # Format son
+            song = f"{song_data['title']} - {song_data['artist']}"
+
+            # Avoid duplicate songs
+            # check if deque is empty or if last song is different
+            if not self.logged_songs or (self.logged_songs and self.logged_songs[-1] != song):
+                self.logged_songs.append(song)
+                self.refresh_listbox()
+
+    def refresh_listbox(self):
+        self.logged_songs_label.delete(0, tk.END)  # Clear listbox
+        for song in self.logged_songs:
+            self.logged_songs_label.insert(tk.END, song)  # Insert song
+
+    # Update current device label
     def update_device_label(self, event=None):
         selected_device = self.combobox_menu.get()
         self.device_label.configure(text=f"Current device: {selected_device}")
 
+    # Get all input devices
     def get_input_devices(self):
         devices = []
         device_info_list = []
@@ -405,6 +437,7 @@ class AudioPlayer:
     def update_song_display(self, song_data):
         self.showing_artist_search = False
         self.current_song_data = song_data
+        self.track_latest_songs(song_data)
 
         if self.spotify_client:
             try:
@@ -654,7 +687,6 @@ class AudioPlayer:
 
             # Update status
             self.recording_status.config(text="")
-
         except Exception as e:
             messagebox.showerror("Error", f"Failed to finalise recording: {str(e)}")
         finally:
@@ -668,6 +700,9 @@ class AudioPlayer:
             activebackground='#ff4444'
         )
         self.sync_button.pack_forget()
+
+        # Add to listbox
+        self.track_latest_songs()
 
         # Clear variables
         self.is_recording = False
