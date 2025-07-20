@@ -328,7 +328,7 @@ class AudioPlayer:
                 bg='#14a085'
             )
             self.spotify_status.config(text=f"{self.spotify_username} connected")
-            self.spotify_button.destroy()
+            self.spotify_button.forget()
         else:
             self.spotify_button.config(
                 text="🎵 Connect to Spotify",
@@ -470,7 +470,7 @@ class AudioPlayer:
     def sync_and_play(self):
         # Need to connect w/ spotify
         if not self.spotify_client:
-            messagebox.showwarning("Spotify Required", "Please connect to Spotify first to use sync feature")
+            messagebox.showwarning("Spotify Required", "Please connect to Spotify to play the song")
             return
 
         # No song detected
@@ -553,17 +553,17 @@ class AudioPlayer:
     # Start recording
     def start_recording(self):
         try:
-            # Get default input device
-            self.audio_p = pyaudio.PyAudio()
-            default_input = None
-            ## Maybe add these to a drop down to select which device?
-            for i in range(self.audio_p.get_device_count()):
-                device_info = self.audio_p.get_device_info_by_index(i)
-                if device_info['maxInputChannels'] > 0:
-                    default_input = device_info
+            # Get selected device from dropdown
+            selected_device_name = self.combobox_menu.get()
+            selected_device_info = None
+
+            # Find the device info
+            for i, device_name in enumerate(self.devices):
+                if device_name == selected_device_name:
+                    selected_device_info = self.device_info_list[i]
                     break
 
-            if default_input is None:
+            if selected_device_info is None:
                 messagebox.showerror("Error", "No input device found")
                 return
 
@@ -595,7 +595,7 @@ class AudioPlayer:
                 activebackground='#888888'
             )
             self.recording_status.config(
-                text=f"Recording from: {default_input['name']}",
+                text=f"Recording from: {selected_device_info['name']}",
                 fg='#ff4444'
             )
 
