@@ -652,9 +652,6 @@ class AudioPlayer:
                 self.audio_stream.stop_stream()
                 self.audio_stream.close()
 
-            if self.audio_p:
-                self.audio_p.terminate()
-
             # Update status
             self.recording_status.config(text="")
 
@@ -675,7 +672,6 @@ class AudioPlayer:
         # Clear variables
         self.is_recording = False
         self.audio_stream = None
-        self.audio_p = None
         self.frames = []
         self.recognition_thread = None
 
