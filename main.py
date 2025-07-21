@@ -18,8 +18,8 @@ import webbrowser
 from dotenv import load_dotenv
 from collections import deque
 
+
 ## REDO CONNECTION SPOTIFY
-# With the listbox, make it link to each song on the listbox
 
 # Carissa's Weird is too niche for this app :(
 # When playing a song, it will also think it's from the more popular album
@@ -45,7 +45,7 @@ class AudioPlayer:
         self.buffer_lock = threading.Lock()
         self.recognition_thread = None
         self.recognition_interval = 5  # Try to identify every 5 seconds
-        self.logged_songs = deque(maxlen=5) # Song deque
+        self.logged_songs = deque(maxlen=5)  # Song deque
         self.song_counter = 0
 
         # clear search flag
@@ -57,6 +57,7 @@ class AudioPlayer:
         self.spotify_auth_manager = None
         self.spotify_update_thread = None
         self.spotify_stop_flag = threading.Event()
+        self.token_expired_shown = False
 
         # Get input devices
         self.devices, self.device_info_list = self.get_input_devices()
@@ -229,7 +230,7 @@ class AudioPlayer:
             state="readonly",
             background='#084b83',
             foreground='black',
-            width= devices_max_length + 5
+            width=devices_max_length + 5
 
         )
         self.combobox_menu.current(0)
@@ -252,15 +253,14 @@ class AudioPlayer:
         # Logged songs listbox , too lazy to change name to listbox......!
         self.logged_songs_label = tk.Listbox(
             recording_frame,
-            height = 5,
-            width = 60,
+            height=5,
+            width=60,
             font=('Poppins', 10),
             bg='#1a1a1a',
             fg='white'
         )
         self.logged_songs_label.pack(pady=(5, 0))
         self.logged_songs_label.bind("<Double-Button-1>", self.click_song)
-
 
     ##################################################################################################################################
 
@@ -290,7 +290,8 @@ class AudioPlayer:
                     spotify_url = track['external_urls']['spotify']
                     webbrowser.open(spotify_url)
                 else:
-                    messagebox.showinfo("Not Found", f"Could not find '{song_data['title']}' by {song_data['artist']} on Spotify")
+                    messagebox.showinfo("Not Found",
+                                        f"Could not find '{song_data['title']}' by {song_data['artist']} on Spotify")
             else:
                 search_url = f"https://open.spotify.com/search/{song_data['title']} {song_data['artist']}"
                 webbrowser.open(search_url)
@@ -385,6 +386,7 @@ class AudioPlayer:
                 self.spotify_client = spotipy.Spotify(auth=token_info)
                 user_info = self.spotify_client.current_user()
                 self.spotify_username = user_info['display_name'] or user_info['id']
+                self.token_expired_shown = False
                 self.root.after(0, self.update_spotify_ui, True)
                 self.start_current_song_monitoring()
             else:
@@ -403,7 +405,7 @@ class AudioPlayer:
                 bg='#14a085'
             )
             self.spotify_status.config(text=f"{self.spotify_username} connected")
-            self.spotify_button.forget()
+            self.spotify_button.pack_forget()
         else:
             self.spotify_button.config(
                 text="🎵 Connect to Spotify",
@@ -411,6 +413,22 @@ class AudioPlayer:
                 bg='#1db954'
             )
             self.spotify_status.config(text="Connection failed")
+
+    def handle_spotify_token_expiry(self):
+        if not self.token_expired_shown:
+            self.token_expired_shown = True
+            messagebox.showwarning("Connection Expired", "Please reconnect to Spotify as the access token expired")
+
+        self.spotify_client = None
+        self.spotify_stop_flag.set()
+
+        self.spotify_button.config(
+            text="🎵 Connect to Spotify",
+            state='normal',
+            bg='#1db954'
+        )
+        self.spotify_status.config(text="Token expired - Please reconnect")
+        self.spotify_button.pack(pady=(10, 0))
 
     # Current song monitoring
     def start_current_song_monitoring(self):
@@ -461,7 +479,8 @@ class AudioPlayer:
             except spotipy.exceptions.SpotifyException as e:
                 # Token expired
                 if e.http_status == 401:
-                    messagebox.showwarning("Connection Expired", "Please reconnect to Spotify as the access token expired")
+                    self.root.after(0, self.handle_spotify_token_expiry)
+                    break
 
                 else:
                     print(f"Spotify API error: {e}")
@@ -533,7 +552,7 @@ class AudioPlayer:
                     image = image.resize((300, 300), Image.Resampling.LANCZOS)
                     photo = ImageTk.PhotoImage(image)
                     self.image_label.config(image=photo)
-                    self.image_label.image = photo # Reference
+                    self.image_label.image = photo  # Reference
                 else:
                     self.show_placeholder_image()
             except Exception as e:
@@ -606,7 +625,7 @@ class AudioPlayer:
         except spotipy.exceptions.SpotifyException as e:
             # Token expired
             if e.http_status == 401:
-                self.root.after(0, lambda: messagebox.showerror("Auth Error","Spotify session expired. Please reconnect."))
+                self.root.after(0, self.handle_spotify_token_expiry)
             else:
                 self.root.after(0, lambda: messagebox.showerror("Spotify Error", f"Spotify API error: {str(e)}"))
         except Exception as e:
@@ -693,7 +712,7 @@ class AudioPlayer:
 
     def record_audio_thread(self):
         chunk = 1024
-        buffer_duration = 10 # 10 seconds of audio in buffer
+        buffer_duration = 10  # 10 seconds of audio in buffer
         max_frames = int(44100 * buffer_duration / chunk)
 
         try:
