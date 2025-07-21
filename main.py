@@ -18,7 +18,6 @@ import webbrowser
 from dotenv import load_dotenv
 from collections import deque
 
-
 class AudioPlayer:
     load_dotenv()
 
@@ -411,7 +410,7 @@ class AudioPlayer:
                     # Not playing
                     song_info = "♪ Not playing anything"
                     self.root.after(0, lambda: self.recognition_status.config(text=song_info))
-                    self.root.after(0, self.clear_display)
+                    # self.root.after(0, self.clear_display)
                     # Clear display if not showing search results
                     if not hasattr(self, 'showing_artist_search') or not self.showing_artist_search:
                         self.root.after(0, self.clear_display)
