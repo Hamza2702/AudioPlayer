@@ -18,6 +18,12 @@ import webbrowser
 from dotenv import load_dotenv
 from collections import deque
 
+## REDO CONNECTION SPOTIFY
+# With the listbox, make it link to each song on the listbox
+
+# Carissa's Weird is too niche for this app :(
+# When playing a song, it will also think it's from the more popular album
+
 class AudioPlayer:
     load_dotenv()
 
@@ -117,7 +123,7 @@ class AudioPlayer:
         # Sync button
         self.sync_button = tk.Button(
             recording_frame,
-            text="🔄 Sync & Play",
+            text="🔄 Play",
             command=self.sync_and_play,
             font=('Poppins', 10, 'bold'),
             bg='#ff66b3',
@@ -253,9 +259,45 @@ class AudioPlayer:
             fg='white'
         )
         self.logged_songs_label.pack(pady=(5, 0))
+        self.logged_songs_label.bind("<Double-Button-1>", self.click_song)
 
 
     ##################################################################################################################################
+
+    # Link user to song
+    def click_song(self, event):
+        selected = self.logged_songs_label.curselection()
+        if selected:
+            i = selected[0]
+            if i < len(self.logged_songs):
+                # FIXED: Get the song data correctly from the deque
+                song_text = list(self.logged_songs)[i]  # Convert deque to list to access by index
+                # Parse the song text to extract title and artist
+                if ' - ' in song_text:
+                    title, artist = song_text.split(' - ', 1)  # Split only on first occurrence
+                    song_data = {'title': title, 'artist': artist}
+                    self.open_spotify_song(song_data)
+
+    # Open spotify song
+    def open_spotify_song(self, song_data):
+        try:
+            if self.spotify_client:
+                search_query = f"track:{song_data['title']} artist:{song_data['artist']}"
+                results = self.spotify_client.search(q=search_query, type='track', limit=1)
+
+                if results['tracks']['items']:
+                    track = results['tracks']['items'][0]
+                    spotify_url = track['external_urls']['spotify']
+                    webbrowser.open(spotify_url)
+                else:
+                    messagebox.showinfo("Not Found", f"Could not find '{song_data['title']}' by {song_data['artist']} on Spotify")
+            else:
+                search_url = f"https://open.spotify.com/search/{song_data['title']} {song_data['artist']}"
+                webbrowser.open(search_url)
+        except Exception as e:
+            print(f"Error opening Spotify song: {e}")
+            search_url = f"https://open.spotify.com/search/{song_data['title']} {song_data['artist']}"
+            webbrowser.open(search_url)
 
     # Deque of latest tracked songs
     def track_latest_songs(self, song_data=None):
