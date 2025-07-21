@@ -18,12 +18,6 @@ import webbrowser
 from dotenv import load_dotenv
 from collections import deque
 
-
-## REDO CONNECTION SPOTIFY
-
-# Carissa's Weird is too niche for this app :(
-# When playing a song, it will also think it's from the more popular album
-
 class AudioPlayer:
     load_dotenv()
 
@@ -414,6 +408,7 @@ class AudioPlayer:
             )
             self.spotify_status.config(text="Connection failed")
 
+
     def handle_spotify_token_expiry(self):
         if not self.token_expired_shown:
             self.token_expired_shown = True
@@ -427,7 +422,7 @@ class AudioPlayer:
             state='normal',
             bg='#1db954'
         )
-        self.spotify_status.config(text="Token expired - Please reconnect")
+        self.spotify_status.config(text="Token expired - reconnect to Spotify")
         self.spotify_button.pack(pady=(10, 0))
 
     # Current song monitoring
