@@ -32,7 +32,7 @@ class AudioPlayer:
         self.is_recording = False
         self.recording_thread = None
         self.audio_stream = None
-        self.audio_p = pyaudio.PyAudio()  # Initialize audio_p here
+        self.audio_p = pyaudio.PyAudio()
         self.frames = []
         self.stop_recording_flag = threading.Event()
         self.live_audio_buffer = []
@@ -297,7 +297,7 @@ class AudioPlayer:
     # Deque of latest tracked songs
     def track_latest_songs(self, song_data=None):
         if song_data:
-            # Format son
+            # Format song
             song = f"{song_data['title']} - {song_data['artist']}"
 
             # Avoid duplicate songs
@@ -583,11 +583,11 @@ class AudioPlayer:
             search_query = f"track:{song_title} artist:{artist_name}"
             results = self.spotify_client.search(q=search_query, type='track', limit=1)
 
-            print(results)
-
             # Play on device
             if results['tracks']['items']:
+                track = results['tracks']['items'][0]
                 track_uri = results['tracks']['items'][0]['uri']
+                album_uri = track['album']['uri'] if 'album' in track else None
 
                 devices = self.spotify_client.devices()
                 active_device = None
@@ -601,14 +601,55 @@ class AudioPlayer:
                     active_device = devices['devices'][0]
 
                 if active_device:
-                    self.spotify_client.start_playback(
-                        device_id=active_device['id'],
-                        uris=[track_uri]
-                    )
-                    self.root.after(0, lambda: self.recognition_status.config(
-                        text=f"Synced and playing: {song_title}",
-                        fg='#1db954'
-                    ))
+                    # If song has an album
+                    if album_uri:
+                        try:
+                            # Get all songs
+                            album_tracks = self.spotify_client.album_tracks(track['album']['id'])
+                            album_track_uris = [t['uri'] for t in album_tracks['items']]
+
+                            # Index of current song in album
+                            try:
+                                track_index = album_track_uris.index(track_uri)
+                            except ValueError:
+                                # If it isn't found, play the song only
+                                track_index = 0
+                                album_track_uris = [track_uri]
+
+                            # Start playing at the current song
+                            self.spotify_client.start_playback(
+                                device_id=active_device['id'],
+                                context_uri=album_uri,
+                                offset={"position": track_index}
+                            )
+
+                            album_name = track['album']['name']
+                            self.root.after(0, lambda: self.recognition_status.config(
+                                text=f"Playing album '{album_name}' from: {song_title}",
+                                fg='#1db954'
+                            ))
+
+                        except Exception as album_error:
+                            print(f"Error playing album, falling back to single track: {album_error}")
+                            # Fallback to playing just the single track
+                            self.spotify_client.start_playback(
+                                device_id=active_device['id'],
+                                uris=[track_uri]
+                            )
+                            self.root.after(0, lambda: self.recognition_status.config(
+                                text=f"Synced and playing: {song_title}",
+                                fg='#1db954'
+                            ))
+                    else:
+                        # No album info, play just the single track
+                        self.spotify_client.start_playback(
+                            device_id=active_device['id'],
+                            uris=[track_uri]
+                        )
+                        self.root.after(0, lambda: self.recognition_status.config(
+                            text=f"Synced and playing: {song_title}",
+                            fg='#1db954'
+                        ))
                 else:
                     self.root.after(0, lambda: messagebox.showwarning("No Device", "No active Spotify device found"))
             else:
