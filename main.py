@@ -57,7 +57,7 @@ class AudioPlayer:
         self.devices, self.device_info_list = self.get_input_devices()
 
         # Main
-        main_frame = tk.Frame(root, bg='#1a1a1a', padx=20, pady=20)
+        main_frame = tk.Frame(root, bg='#1a1a1a', padx=15, pady=15)
         main_frame.pack(fill=tk.BOTH, expand=True)
 
         # Search
@@ -143,16 +143,6 @@ class AudioPlayer:
 
         recognition_frame = tk.Frame(main_frame, bg='#1a1a1a')
         recognition_frame.pack(fill=tk.X, pady=(0, 0))
-
-        # Recognition status label
-        self.recognition_status = tk.Label(
-            recognition_frame,
-            text="",
-            font=('Poppins', 10),
-            bg='#1a1a1a',
-            fg='#888888'
-        )
-        self.recognition_status.pack(pady=(5, 0))
 
         # Display section
         self.display_frame = tk.Frame(main_frame, bg='#1a1a1a')
@@ -321,6 +311,7 @@ class AudioPlayer:
         devices = []
         device_info_list = []
         default_input = None
+        seen_devices = set() # To stop duplicates
 
         # Go through devices
         for i in range(self.audio_p.get_device_count()):
@@ -328,6 +319,13 @@ class AudioPlayer:
             # Get input devices only
             if device_info['maxInputChannels'] > 0:
                 device_name = device_info['name']
+
+                # Skip if seen
+                if device_name in seen_devices:
+                    continue
+
+                seen_devices.add(device_name) # Add to set
+
                 # Check for default input device
                 if device_info.get('isDefaultInput', False):
                     default_input = device_name
@@ -418,7 +416,7 @@ class AudioPlayer:
         self.spotify_stop_flag.set()
 
         self.spotify_button.config(
-            text="🎵 Connect to Spotify",
+            text="🎵 Reconnect to Spotify",
             state='normal',
             bg='#1db954'
         )
@@ -463,12 +461,12 @@ class AudioPlayer:
                     self.root.after(0, self.update_song_display, song_data)
                 else:
                     # Not playing
-                    song_info = "♪ Not playing anything"
-                    self.root.after(0, lambda: self.recognition_status.config(text=song_info))
                     # self.root.after(0, self.clear_display)
                     # Clear display if not showing search results
                     if not hasattr(self, 'showing_artist_search') or not self.showing_artist_search:
-                        self.root.after(0, self.clear_display)
+                        self.root.after(0, lambda: self.title_label.config(text="Not playing anything"))
+                        self.root.after(0, lambda: self.subtitle_label.config(text="by No one • Nothing"))
+                        self.root.after(0, self.show_placeholder_image)
 
 
             except spotipy.exceptions.SpotifyException as e:
@@ -496,42 +494,16 @@ class AudioPlayer:
         self.current_song_data = song_data
         self.track_latest_songs(song_data)
 
-        if self.spotify_client:
-            try:
-                curr_track = self.spotify_client.current_playback()
-                repeat_state = curr_track.get('repeat_state') if curr_track else None
-                rep_state = "Off"
+        curr_track = self.spotify_client.current_playback()
+        repeat_state = curr_track.get('repeat_state') if curr_track else None
+        rep_state = "• Off"
 
-                # If song is looped etc
-                if repeat_state == "off":
-                    rep_state = ""
-                elif repeat_state == "context":
-                    rep_state = "• (Album repeat)"
-                elif repeat_state == "track":
-                    rep_state = "• (Looped)"
-
-                # Identified song
-                self.recognition_status.config(
-                    text=f"Song playing: {song_data['title']} {rep_state}",
-                    fg='#14a085'
-                )
-            except Exception as e:
-                print(f"Error getting Spotify playback info: {e}")
-                self.recognition_status.config(
-                    text=f"Song recognized: {song_data['title']}",
-                    fg='#14a085'
-                )
-        else:
-            self.recognition_status.config(
-                text=f"Song recognized: {song_data['title']}",
-                fg='#14a085'
-            )
 
         self.title_label.config(text=song_data['title'])
 
         # If in album
         if 'album' in song_data and song_data['album']:
-            subtitle_text = f"by {song_data['artist']} • {song_data['album']}"
+            subtitle_text = f"by {song_data['artist']} • {song_data['album']} {rep_state}"
         else:
             subtitle_text = f"by {song_data['artist']}"
 
@@ -624,10 +596,6 @@ class AudioPlayer:
                             )
 
                             album_name = track['album']['name']
-                            self.root.after(0, lambda: self.recognition_status.config(
-                                text=f"Playing album '{album_name}' from: {song_title}",
-                                fg='#1db954'
-                            ))
 
                         except Exception as album_error:
                             print(f"Error playing album, falling back to single track: {album_error}")
@@ -636,20 +604,12 @@ class AudioPlayer:
                                 device_id=active_device['id'],
                                 uris=[track_uri]
                             )
-                            self.root.after(0, lambda: self.recognition_status.config(
-                                text=f"Synced and playing: {song_title}",
-                                fg='#1db954'
-                            ))
                     else:
                         # No album info, play just the single track
                         self.spotify_client.start_playback(
                             device_id=active_device['id'],
                             uris=[track_uri]
                         )
-                        self.root.after(0, lambda: self.recognition_status.config(
-                            text=f"Synced and playing: {song_title}",
-                            fg='#1db954'
-                        ))
                 else:
                     self.root.after(0, lambda: messagebox.showwarning("No Device", "No active Spotify device found"))
             else:
@@ -825,7 +785,7 @@ class AudioPlayer:
                         continue
 
                 # Update status
-                self.root.after(0, lambda: self.recognition_status.config(text="Identifying song...", fg='#ffaa00'))
+                self.root.after(0, lambda: self.recording_status.config(text="Identifying song...", fg='#ffaa00'))
 
                 # Create temporary file from live buffer
                 temp_file = self.create_temp_file_from_buffer()
@@ -851,13 +811,13 @@ class AudioPlayer:
                 else:
                     # Only show error if recording
                     if self.is_recording:
-                        self.root.after(0, lambda: self.recognition_status.config(text="Listening for music...",
+                        self.root.after(0, lambda: self.recording_status.config(text="Listening for music...",
                                                                                   fg='#888888'))
 
             except Exception as e:
                 print(f"Recognition loop error: {e}")
                 if self.is_recording:
-                    self.root.after(0, lambda: self.recognition_status.config(text="Recognition error, retrying...",
+                    self.root.after(0, lambda: self.recording_status.config(text="Recognition error, retrying...",
                                                                               fg='#ff4444'))
 
     def create_temp_file_from_buffer(self):
@@ -956,7 +916,6 @@ class AudioPlayer:
             artist_data = loop.run_until_complete(self.find_and_get_artist(artist_name))
 
             if artist_data:
-                self.root.after(0, lambda: self.recognition_status.config(text=""))
                 self.root.after(0, self.update_artist_display, artist_data)
             else:
                 self.root.after(0, self.show_error, f"Artist '{artist_name}' not found")
