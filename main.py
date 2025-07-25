@@ -18,6 +18,8 @@ import webbrowser
 from dotenv import load_dotenv
 from collections import deque
 
+## Title / search + search button / Check for song + Connect to Spotify / Inputs / List of songs / Current song image + titles
+
 class AudioPlayer:
     load_dotenv()
 
